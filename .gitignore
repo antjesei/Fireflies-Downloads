@@ -1,0 +1,6 @@
+.env
+output/
+.venv/
+__pycache__/
+*.pyc
+last_run.txt
