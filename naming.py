@@ -26,6 +26,7 @@ def is_generic_title(title: str | None) -> bool:
 
     Generisch = leer, bekannter Prefix (Untitled/Meeting/...), oder besteht
     nur aus Datum/Uhrzeit-Tokens (z.B. "Apr 10, 11:01 AM").
+    Nicht-generisch sobald mindestens 1 bedeutungsvolles Wort vorhanden ist.
     """
     if not title or not title.strip():
         return True
@@ -36,7 +37,13 @@ def is_generic_title(title: str | None) -> bool:
     # Tokens extrahieren — alles alphabetische Wort >=3 Zeichen, kein Monat/Zeit
     words = re.findall(r"[A-Za-zÄÖÜäöüß]{3,}", t)
     meaningful = [w for w in words if w.lower() not in _MONTHS]
-    return len(meaningful) == 0
+    # Generisch nur, wenn KEIN bedeutungsvolles Wort vorhanden (reine Datum/Zeit-Strings)
+    if len(meaningful) >= 1:
+        return False
+    # Zusätzlich: Titel mit Ziffern und Buchstaben (z.B. "Q3 2026") nicht als generisch werten
+    if re.search(r"\d", t) and re.search(r"[A-Za-zÄÖÜäöüß]{2,}", t):
+        return False
+    return True
 
 
 _VIDEO_EXT = re.compile(r"\.(mp4|mov|avi|mkv|webm|m4v|mp3|wav|m4a)$", re.IGNORECASE)

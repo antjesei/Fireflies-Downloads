@@ -36,7 +36,13 @@ def _load_config() -> tuple[str, Path]:
 
 
 def _prompt_title(ts: TranscriptSummary | Transcript) -> str:
-    """Fragt nach echtem Titel. Leere Eingabe = Originaltitel beibehalten."""
+    """Fragt nach echtem Titel. Leere Eingabe = Originaltitel beibehalten.
+    Im nicht-interaktiven Modus (Frontend) wird der Originaltitel verwendet.
+    """
+    if not sys.stdin.isatty():
+        print(f'[!] Titel "{ts.title}" wirkt generisch – wird unverändert verwendet (kein interaktiver Modus).')
+        return (ts.title or "").strip()
+
     date_str = ts.date.strftime("%d.%m.%Y %H:%M")
     dur_min = int(round(ts.duration))
     participants = ", ".join(ts.participants) if ts.participants else "-"
@@ -47,12 +53,14 @@ def _prompt_title(ts: TranscriptSummary | Transcript) -> str:
     return entered if entered else (ts.title or "").strip()
 
 
-def _process_one(api: FirefliesAPI, meeting_id: str, output_dir: Path) -> None:
+def _process_one(api: FirefliesAPI, meeting_id: str, output_dir: Path, title_override: str | None = None) -> None:
     print(f"\n--> Lade Meeting {meeting_id} ...")
     t = api.get_transcript(meeting_id)
 
     # Titel prüfen / ggf. erfragen
-    if is_generic_title(t.title):
+    if title_override:
+        t.title = title_override.strip()
+    elif is_generic_title(t.title):
         t.title = _prompt_title(t)
     else:
         t.title = t.title.strip()
@@ -180,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--since", metavar="YYYY-MM-DD", help="Alle Meetings seit Datum")
     parser.add_argument("--last", metavar="24h|3d|2w", help="Meetings der letzten Zeitspanne")
     parser.add_argument("--list-recent", action="store_true", help="Nur die letzten 20 Meetings auflisten")
+    parser.add_argument("--list-json", action="store_true", help="Letzten 20 Meetings als JSON ausgeben (fuer Frontend)")
+    parser.add_argument("--delete", metavar="MEETING_ID", help="Fireflies-Aufnahme dauerhaft loeschen")
+    parser.add_argument("--title", metavar="TITEL", help="Meetingtitel (ueberspringt interaktive Abfrage)")
     args = parser.parse_args(argv)
 
     api_key, output_dir = _load_config()
@@ -191,8 +202,30 @@ def main(argv: list[str] | None = None) -> int:
                 print(_format_listing_row(i, ts))
             return 0
 
+        if args.delete:
+            print(f"Lösche Aufnahme {args.delete} ...")
+            api.delete_transcript(args.delete)
+            print(f"[OK] Aufnahme {args.delete} wurde dauerhaft gelöscht.")
+            return 0
+
+        if args.list_json:
+            import json
+            meetings = api.list_recent(20)
+            result = [
+                {
+                    "id": ts.id,
+                    "title": ts.title or "(ohne Titel)",
+                    "date": ts.date.strftime("%d.%m.%Y %H:%M"),
+                    "duration": int(round(ts.duration)),
+                    "participants": ts.participants or [],
+                }
+                for ts in meetings
+            ]
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+
         if args.meeting_id:
-            _process_one(api, args.meeting_id, output_dir)
+            _process_one(api, args.meeting_id, output_dir, title_override=args.title)
             return 0
 
         if args.since:
@@ -200,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             meetings = api.list_since(since)
             print(f"{len(meetings)} Meeting(s) seit {args.since} gefunden.")
             for ts in meetings:
-                _process_one(api, ts.id, output_dir)
+                _process_one(api, ts.id, output_dir, title_override=args.title)
             return 0
 
         if args.last:
@@ -208,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
             meetings = api.list_since(since)
             print(f"{len(meetings)} Meeting(s) in den letzten {args.last} gefunden.")
             for ts in meetings:
-                _process_one(api, ts.id, output_dir)
+                _process_one(api, ts.id, output_dir, title_override=args.title)
             return 0
 
         # Standard: interaktiv
