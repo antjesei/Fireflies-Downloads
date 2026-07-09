@@ -16,33 +16,40 @@ _MONTHS = {
     "am", "pm", "uhr",
 }
 
-_GENERIC_PREFIX = re.compile(
-    r"^\s*(untitled|meeting|call|new meeting|fireflies)\b", re.IGNORECASE
+# Nur-generisch-Titel: komplett leer oder ein einzelnes Schlüsselwort ohne weiteren Inhalt
+_GENERIC_ONLY = re.compile(
+    r"^\s*(untitled|new\s+meeting|fireflies)\s*$", re.IGNORECASE
 )
 
 
 def is_generic_title(title: str | None) -> bool:
     """True, wenn Fireflies nur ein generisches Label geliefert hat.
 
-    Generisch = leer, bekannter Prefix (Untitled/Meeting/...), oder besteht
-    nur aus Datum/Uhrzeit-Tokens (z.B. "Apr 10, 11:01 AM").
-    Nicht-generisch sobald mindestens 1 bedeutungsvolles Wort vorhanden ist.
+    Generisch = leer, reines Fireflies-Schlüsselwort (Untitled/New Meeting/...),
+    oder besteht nur aus Datum/Uhrzeit-Tokens (z.B. "Jun 26, 02:01 PM").
+    Jedes zusätzliche bedeutungsvolle Wort macht den Titel nicht-generisch.
     """
     if not title or not title.strip():
         return True
     t = title.strip()
-    if _GENERIC_PREFIX.match(t):
+
+    # Reine Fireflies-Platzhalter ohne weiteren Inhalt
+    if _GENERIC_ONLY.match(t):
         return True
 
-    # Tokens extrahieren — alles alphabetische Wort >=3 Zeichen, kein Monat/Zeit
+    # Bedeutungsvolle Wörter: ≥3 Buchstaben, kein Monat/Zeitwort
     words = re.findall(r"[A-Za-zÄÖÜäöüß]{3,}", t)
     meaningful = [w for w in words if w.lower() not in _MONTHS]
-    # Generisch nur, wenn KEIN bedeutungsvolles Wort vorhanden (reine Datum/Zeit-Strings)
+
+    # Mindestens 1 bedeutungsvolles Wort → echter Titel
     if len(meaningful) >= 1:
         return False
-    # Zusätzlich: Titel mit Ziffern und Buchstaben (z.B. "Q3 2026") nicht als generisch werten
+
+    # Ziffern + Buchstaben (z.B. "Q3 2026") → nicht generisch
     if re.search(r"\d", t) and re.search(r"[A-Za-zÄÖÜäöüß]{2,}", t):
         return False
+
+    # Nur Datum/Uhrzeit-Tokens übrig → generisch
     return True
 
 
